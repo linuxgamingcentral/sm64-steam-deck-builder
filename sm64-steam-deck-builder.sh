@@ -54,7 +54,7 @@ RENDER96=Render96ex
 
 # Main menu
 while true; do
-Choice=$(zen_nospam --width 1000 --height 400 --list --radiolist --multiple --title "Super Mario 64 Steam Deck Builder and Launcher"\
+Choice=$(zen_nospam --width 1000 --height 350 --list --radiolist --multiple --title "Super Mario 64 Steam Deck Builder and Launcher"\
 	--column "Select a Fork" \
 	--column "Option" \
 	--column="Description"\
