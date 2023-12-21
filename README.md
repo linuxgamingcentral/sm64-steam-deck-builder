@@ -1,7 +1,7 @@
 # Super Mario 64 Steam Deck Builder and Launcher
 Super Mario 64 PC port builder and launcher for Steam Deck. **Please put your legally-dumped ROM in `$HOME` and name it to `baserom.us.z64`, `baserom.jp.z64`, or `baserom.eu.z64` depending on the region of the ROM.** Otherwise, the program won't run.
 
-To use the builder, simply right-click the [desktop file](https://raw.githubusercontent.com/linuxgamingcentral/sm64-steam-deck-builder/main/sm64-builder.desktop), click "Save link as..." and save it to your desktop. Double-click or tap the downloaded file to run it. You can also add the installer as a non-Steam shortcut for easy access in Game Mode.
+To use the builder, simply right-click the [desktop file](https://raw.githubusercontent.com/linuxgamingcentral/sm64-steam-deck-builder/main/sm64-builder.desktop), click "Save link as..." and save it to your desktop. Double-click or tap the downloaded file to run it.
 ![Screenshot_20231218_084103](https://github.com/linuxgamingcentral/sm64-steam-deck-builder/assets/101075966/90d1d912-d199-4c60-bd06-a49c9cf4507c)
 **Please install the build dependencies first under the Options menu.** You will need a root password for this. After installing the dependencies you should no longer have to run this again, unless Valve ships an update to SteamOS.
 
