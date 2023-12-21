@@ -1,10 +1,164 @@
 #!/bin/bash
 
+clear
+
 echo -e "Super Mario 64 Steam Deck builder - script by Linux Gaming Central\n"
+
+title="Super Mario 64 Steam Deck Builder"
 
 # Removes unhelpful GTK warnings
 zen_nospam() {
   zenity 2> >(grep -v 'Gtk' >&2) "$@"
+}
+
+# zenity functions
+error() {
+	e=$1
+	zen_nospam --error --title="$title" --width=500 --height=100 --text "$1"
+}
+
+info() {
+	i=$1
+	zen_nospam --info --title "$title" --width 400 --height 75 --text "$1"
+}
+
+progress_bar() {
+	t=$1
+	zen_nospam --title "$title" --text "$1" --progress --pulsate --auto-close --auto-kill --width=300 --height=100
+
+	if [ "$?" != 0 ]; then
+		echo -e "\nUser canceled.\n"
+	fi
+}
+
+question() {
+	q=$1
+	zen_nospam --question --title="$title" --width=300 height=200 --text="$1"
+}
+
+# menus
+main_menu() {
+	zen_nospam --width 1000 --height 350 --list --radiolist --multiple --title "$title"\
+	--column ""\
+	--column "Option"\
+	--column="Description"\
+	FALSE $SM64 "The original SM64 PC port."\
+	FALSE $SM64PLUS "SM64 with more responsive controls/camera, 60 FPS support, and can continue the level after getting a star."\
+	FALSE $SM64EX "SM64 with new options menu, support for texture packs, analog camera, etc."\
+	FALSE $SM64EX_ALO "Fork of $SM64EX with newer camera, QoL fixes and features, etc."\
+	FALSE $RENDER96 "Fork of $SM64EX with HD character models and textures."\
+	FALSE OPTIONS "Download and install needed dependencies, back up save files, download hi-res textures, etc."\
+	TRUE EXIT "Exit this script."
+}
+
+sub_menu() {
+	s=$1
+	zen_nospam --width 1000 --height 300 --list --radiolist --multiple --title "$title"\
+	--column ""\
+	--column "Option"\
+	--column="Description"\
+	FALSE INSTALL_$1 "Install $1"\
+	FALSE UPDATE_$1 "Update $1"\
+	FALSE PLAY_$1 "Play $1"\
+	FALSE EDIT_$1 "Adjust options for $1"\
+	FALSE UNINSTALL_$1 "Uninstall $1 (warning: save data may be lost! Back it up first!)"\
+	TRUE EXIT "Exit this menu."
+}
+
+options() {
+	zen_nospam --width 1000 --height 300 --list --radiolist --multiple --title "$title"\
+	--column ""\
+	--column "Option"\
+	--column="Description"\
+	FALSE DEPENDENCIES "Install build dependencies. (Root password required.)"\
+	FALSE UBUNTU_DEPENDENCIES "Install build dependencies for Ubuntu-based distros (Pop!_OS, Mint, etc. Root password required.)"\
+	FALSE BACKUP "Backup save files"\
+	FALSE INSTALL_SM64_RELOADED "Install SM64 Reloaded (hi-res textures)"\
+	FALSE INSTALL_TEXTURE_PACKS "Install model/texture packs for $RENDER96 (downloading texture pack will take a while)"\
+	TRUE EXIT "Exit this menu."
+}
+
+# fork options
+install() {
+	fork=$1
+	repo=$2
+	
+	# check if cloned repo exists. If it does, exit
+	if [ -d "$1" ]; then
+		error "$1 already exists. Please run UPDATE_$1 if you wish to update $1."
+	else
+		(
+		echo -e "Cloning repo...\n"
+		git clone https://github.com/$2/$1.git
+
+		echo -e "Copying ROM...\n"
+		cp $HOME/$ROM $1/
+		cd $1
+		echo -e "Compiling...\n"
+		make -j$(nproc)
+		echo -e "Finished compiling!\n"
+		) | progress_bar "Installing...this will take a minute or two."
+		
+		info "Installation complete!"
+	fi
+}
+
+update() {
+	fork=$1
+	# check if directory exists. If it doesn't, exit this option
+	if ! [ -d "$1" ]; then
+		error "$1 doesn't exist. Please run INSTALL_$1 before running this option."
+	else
+		(
+		cd $1
+
+		echo -e "Updating repository...\n"
+		git pull
+
+		echo -e "Re-compiling...\n"
+		make -j$(nproc)
+		echo -e "Finished compiling!\n"
+		) | progress_bar "Updating. This shouldn't take long."
+
+		info "Update complete!"
+	fi
+}
+
+play() {
+	fork=$1
+	# check to see if executable exists. Discontinue if it's not detected
+	if [ -f "$1/build/$REGION${PC}/sm64.$REGION" ] || [ -f "$1/build/$REGION${PC}/sm64.$REGION.f3dex2e" ]; then
+		cd $1/build/$REGION${PC}/
+		./sm64.$REGION || ./sm64.$REGION.f3dex2e --skip-intro
+		cd $HOME/Applications
+	else
+		error "Executable file not found."
+	fi
+}
+
+edit_config() {
+	config_file=$1
+
+	if ! [ -f $1 ]; then
+		error "$1 file not found."
+	else
+		xdg-open $1
+	fi
+}
+
+uninstall() {
+	fork=$1
+	if ! [ -d $1 ]; then
+		error "$1 folder not found."
+	else
+		if ( question "WARNING: please back up your save file from the Options menu, otherwise it might be deleted! Select Yes to continue, or No to stop." ); then
+		yes |
+			rm -rf $1
+			info "Uninstall complete."
+		else
+			echo -e "\nUser selected no, continuing...\n"
+		fi
+	fi
 }
 
 # Check if GitHub is reachable
@@ -14,18 +168,13 @@ then
     exit 1
 fi
 
-# check if the user is on Deck. If not, provide a warning.
-if ! [ $USER = "deck" ]; then
-	zen_nospam --title="Super Mario 64 Steam Deck Builder" --width=300 --height=100 --warning --text "Warning: you're likely not using a Steam Deck. Please note this installer may not work on other devices."
-fi
-
 US_ROM=baserom.us.z64
 JP_ROM=baserom.jp.z64
 EU_ROM=baserom.eu.z64
 
 # check for ROM in home. If it doesn't exist, close the program
 if ! [[ -f "$HOME/$US_ROM" ]] && ! [[ -f "$HOME/$JP_ROM" ]] && ! [[ -f "$HOME/$EU_ROM" ]]; then
-	zen_nospam --title="Super Mario 64 Steam Deck Builder" --width=500 --height=100 --error --text "Error: ROM not found. Place your legally-dumped SM64 ROM in $HOME and name it to $US_ROM, $JP_ROM, or $EU_ROM, depending on the region of the ROM."
+	error "Error: ROM not found. Place your legally-dumped SM64 ROM in $HOME and name it to $US_ROM, $JP_ROM, or $EU_ROM, depending on the region of the ROM."
 	exit
 fi
 
@@ -47,606 +196,172 @@ echo -e "Region is $REGION\n"
 PC=_pc
 
 SM64=sm64-port
+SM64PLUS=sm64plus
 SM64EX=sm64ex
 SM64EX_ALO=sm64ex-alo
-SM64PLUS=sm64plus
 RENDER96=Render96ex
+
+cd $HOME
+mkdir -p Applications
+cd Applications
 
 # Main menu
 while true; do
-Choice=$(zen_nospam --width 1000 --height 350 --list --radiolist --multiple --title "Super Mario 64 Steam Deck Builder and Launcher"\
-	--column "Select a Fork" \
-	--column "Option" \
-	--column="Description"\
-	FALSE SM64 "The original SM64 PC port."\
-	FALSE SM64EX "SM64 with new options menu, support for texture packs, analog camera, etc."\
-	FALSE SM64EX_ALO "Fork of $SM64EX with newer camera, QoL fixes and features, etc."\
-	FALSE SM64PLUS "SM64 with more responsive controls/camera, 60 FPS support, and can continue the level after getting a star."\
-	FALSE RENDER96 "Fork of $SM64EX with HD character models and textures."\
-	FALSE OPTIONS "Download and install needed dependencies, back up save files, download hi-res textures, etc."\
-	TRUE EXIT "Exit this script.")
+Choice=$(main_menu)
 
 if [ $? -eq 1 ] || [ "$Choice" == "EXIT" ]; then
 	echo Goodbye!
 	exit
 
-elif [ "$Choice" == "SM64" ]; then
+elif [ "$Choice" == "$SM64" ]; then
 	# sub menu
 	while true; do
-	Choice=$(zen_nospam --width 800 --height 300 --list --radiolist --multiple --title "Super Mario 64 Steam Deck Builder and Launcher"\
-		--column "Select One" \
-		--column "Option" \
-		--column="Description"\
-		FALSE INSTALL_SM64 "Install $SM64"\
-		FALSE UPDATE_SM64 "Update $SM64"\
-		FALSE PLAY_SM64 "Play $SM64"\
-		FALSE EDIT_SM64 "Adjust options for $SM64"\
-		FALSE UNINSTALL_SM64 "Uninstall $SM64 (warning: save data will be lost! Back it up first!)"\
-		TRUE EXIT "Exit this menu.")
+	Choice=$(sub_menu "$SM64")
 
 	if [ $? -eq 1 ] || [ "$Choice" == "EXIT" ]; then
 		echo -e "\nUser selected EXIT, going back to main menu.\n"
 		break
 
-	elif [ "$Choice" == "INSTALL_SM64" ]; then
-		cd $HOME
+	elif [ "$Choice" == "INSTALL_$SM64" ]; then
+		install $SM64 $SM64
 
-		# check if cloned repo exists. If it does, exit
-		if [ -d "$HOME/$SM64" ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$SM64 already exists. Please run UPDATE_SM64 if you wish to update $SM64." --width 400 --height 75
-		else
-			(
-			echo -e "Cloning repo...\n"
-			git clone https://github.com/$SM64/$SM64.git
-			echo 25; sleep 1
+	elif [ "$Choice" == "UPDATE_$SM64" ]; then
+		update $SM64
 
-			echo -e "Copying ROM...\n"
-			cp $HOME/$ROM $HOME/$SM64/
-			cd $SM64
-			echo 50; sleep 1
+	elif [ "$Choice" == "PLAY_$SM64" ]; then
+		play $SM64
 
-			echo -e "Compiling...\n"
-			make -j$(nproc)
-			echo -e "Finished compiling!\n"
-			) | zen_nospam --title "Super Mario 64 Steam Deck Builder" --text "Installing. This will take a minute or two." --progress --percentage=0 --auto-close --auto-kill --width=300 --height=100
-			echo 100; sleep 1
+	elif [ "$Choice" == "EDIT_$SM64" ]; then
+		edit_config "$SM64/build/$REGION${PC}/sm64config.txt"
 
-			if [ "$?" != 0 ]; then
-				echo -e "\nInstallation canceled.\n"
-			else
-				zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Installation complete!" --width 400 --height 75
-			fi
-		fi
-
-	elif [ "$Choice" == "UPDATE_SM64" ]; then
-		cd $HOME
-
-		# check if sm64-port directory exists. If it doesn't, exit this option
-		if ! [ -d "$HOME/$SM64" ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$SM64 doesn't exist. Please run INSTALL_SM64 before running this option." --width 400 --height 75
-		else
-			(
-			cd $SM64
-
-			echo -e "Updating repository...\n"
-			git pull
-			echo 50; sleep 1
-
-			echo -e "Re-compiling...\n"
-			make -j$(nproc)
-			echo -e "Finished compiling!\n"
-			) | zen_nospam --title "Super Mario 64 Steam Deck Builder" --text "Updating. This shouldn't take long." --progress --percentage=0 --auto-close --auto-kill --width=300 --height=100
-			echo 100; sleep 1
-
-			if [ "$?" != 0 ]; then
-				echo -e "\nUpdate canceled.\n"
-			else
-				zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Update complete!" --width 400 --height 75
-			fi
-		fi
-
-	elif [ "$Choice" == "PLAY_SM64" ]; then
-		# check to see if executable exists. Discontinue if it's not detected
-		if [ -f "$HOME/$SM64/build/$REGION${PC}/sm64.$REGION" ]; then
-			cd $HOME/$SM64/build/$REGION${PC}/
-			./sm64.$REGION
-		else
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "Executable file not found." --width 400 --height 75
-		fi
-
-	elif [ "$Choice" == "EDIT_SM64" ]; then
-		config_file="$HOME/$SM64/build/$REGION${PC}/sm64config.txt"
-
-		if ! [ -f $config_file ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$config_file file not found." --width 400 --height 75
-		else
-			kate $config_file
-		fi
-
-	elif [ "$Choice" == "UNINSTALL_SM64" ]; then
-		if ! [ -d $HOME/$SM64 ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$SM64 folder not found." --width 400 --height 75
-		else
-			if ( zen_nospam --title="Super Mario 64 Steam Deck Builder" --width=300 height=200 --question --text="WARNING: please back up your save file from the Options menu, otherwise it will be deleted! Select Yes to continue, or No to stop." ); then
-					yes |
-						rm -rf $HOME/$SM64
-						zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Uninstall complete." --width 400 --height 75
-					else
-						echo -e "\nUser selected no, continuing...\n"
-			fi
-		fi
+	elif [ "$Choice" == "UNINSTALL_$SM64" ]; then
+		uninstall $SM64
 	fi
 	done
 
-elif [ "$Choice" == "SM64EX" ]; then
+elif [ "$Choice" == "$SM64PLUS" ]; then
 	# sub menu
 	while true; do
-	Choice=$(zen_nospam --width 800 --height 300 --list --radiolist --multiple --title "Super Mario 64 Steam Deck Builder and Launcher"\
-		--column "Select One" \
-		--column "Option" \
-		--column="Description"\
-		FALSE INSTALL_SM64EX "Install $SM64EX"\
-		FALSE UPDATE_SM64EX "Update $SM64EX"\
-		FALSE PLAY_SM64EX "Play $SM64EX"\
-		FALSE EDIT_SM64EX "Adjust options for $SM64EX"\
-		FALSE UNINSTALL_SM64EX "Uninstall $SM64EX"\
-		TRUE EXIT "Exit this menu.")
+	Choice=$(sub_menu $SM64PLUS)
 
 	if [ $? -eq 1 ] || [ "$Choice" == "EXIT" ]; then
 		echo -e "\nUser selected EXIT, going back to main menu.\n"
 		break
 
-	elif [ "$Choice" == "INSTALL_SM64EX" ]; then
-		cd $HOME
+	elif [ "$Choice" == "INSTALL_$SM64PLUS" ]; then
+		install $SM64PLUS "MorsGames"
 
-		# check if cloned repo exists. If it does, exit
-		if [ -d "$HOME/$SM64EX" ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$SM64EX already exists. Please run UPDATE_SM64EX if you wish to update $SM64EX." --width 400 --height 75
-		else
-			(
-			echo -e "Cloning repo...\n"
-			git clone https://github.com/sm64pc/$SM64EX.git
-			cd $SM64EX
-			echo 25; sleep 1
+	elif [ "$Choice" == "UPDATE_$SM64PLUS" ]; then
+		update $SM64PLUS
 
-			echo -e "Copying ROM...\n"
-			cp $HOME/$ROM $HOME/$SM64EX/
-			echo 50; sleep 1
+	elif [ "$Choice" == "PLAY_$SM64PLUS" ]; then
+		play $SM64PLUS
 
-			echo -e "Compiling...\n"
-			make BETTERCAMERA=1 NODRAWINGDISTANCE=1 TEXTURE_FIX=1 EXTERNAL_DATA=1 -j$(nproc)
-			echo -e "Finished compiling\n"
-			) | zen_nospam --title "Super Mario 64 Steam Deck Builder" --text "Installing. This will take a minute or two." --progress --percentage=0 --auto-close --auto-kill --width=300 --height=100
-			echo 100; sleep 1
+	elif [ "$Choice" == "EDIT_$SM64PLUS" ]; then
+		edit_config "$HOME/.config/SM64Plus/settings.ini"
 
-			if [ "$?" != 0 ]; then
-				echo -e "\nInstallation canceled.\n"
-			else
-				zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Installation complete!" --width 400 --height 75
-			fi
-		fi
-
-	elif [ "$Choice" == "UPDATE_SM64EX" ]; then
-		cd $HOME
-
-		# check if sm64ex directory exists. If it doesn't, exit this option
-		if ! [ -d "$HOME/$SM64EX" ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$SM64EX doesn't exist. Please run INSTALL_SM64EX before running this option." --width 400 --height 75
-		else
-			(
-			cd $SM64EX
-			echo -e "Updating repository...\n"
-			git pull
-			echo 50; sleep 1
-
-			echo -e "Re-compiling...\n"
-			make -j$(nproc)
-			echo -e "Finished compiling!\n"
-			) | zen_nospam --title "Super Mario 64 Steam Deck Builder" --text "Updating. This shouldn't take long." --progress --percentage=0 --auto-close --auto-kill --width=300 --height=100
-			echo 100; sleep 1
-
-			if [ "$?" != 0 ]; then
-				echo -e "\nUpdate canceled.\n"
-			else
-				zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Update complete!" --width 400 --height 75
-			fi
-		fi
-
-	elif [ "$Choice" == "PLAY_SM64EX" ]; then
-		# check to see if executable exists. Discontinue if it's not detected
-		if [ -f "$HOME/$SM64EX/build/$REGION${PC}/sm64.$REGION.f3dex2e" ]; then
-			cd $HOME/$SM64EX/build/$REGION${PC}/
-			./sm64.$REGION.f3dex2e gfx/ --skip-intro
-		else
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "Executable file not found." --width 400 --height 75
-		fi
-
-	elif [ "$Choice" == "EDIT_SM64EX" ]; then
-		config_file="$HOME/.local/share/$SM64EX/sm64config.txt"
-
-		if ! [ -f $config_file ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$config_file file not found." --width 400 --height 75
-		else
-			kate $config_file
-		fi
-
-	elif [ "$Choice" == "UNINSTALL_SM64EX" ]; then
-		if ! [ -d $HOME/$SM64EX ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$SM64EX folder not found." --width 400 --height 75
-		else
-			rm -rf $HOME/$SM64EX
-			zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Uninstall complete." --width 400 --height 75
-		fi
+	elif [ "$Choice" == "UNINSTALL_$SM64PLUS" ]; then
+		uninstall $SM64PLUS
 	fi
 	done
 
-elif [ "$Choice" == "SM64EX_ALO" ]; then
+elif [ "$Choice" == "$SM64EX" ]; then
 	# sub menu
 	while true; do
-	Choice=$(zen_nospam --width 800 --height 300 --list --radiolist --multiple --title "Super Mario 64 Steam Deck Builder and Launcher"\
-		--column "Select One" \
-		--column "Option" \
-		--column="Description"\
-		FALSE INSTALL_SM64EX_ALO "Install $SM64EX_ALO"\
-		FALSE UPDATE_SM64EX_ALO "Update $SM64EX_ALO"\
-		FALSE PLAY_SM64EX_ALO "Play $SM64EX_ALO"\
-		FALSE EDIT_SM64EX_ALO "Adjust options for $SM64EX_ALO"\
-		FALSE UNINSTALL_SM64EX_ALO "Uninstall $SM64EX_ALO"\
-		TRUE EXIT "Exit this menu.")
+	Choice=$(sub_menu $SM64EX)
 
 	if [ $? -eq 1 ] || [ "$Choice" == "EXIT" ]; then
 		echo -e "\nUser selected EXIT, going back to main menu.\n"
 		break
 
-	elif [ "$Choice" == "INSTALL_SM64EX_ALO" ]; then
-		cd $HOME
+	elif [ "$Choice" == "INSTALL_$SM64EX" ]; then
+		install $SM64EX "sm64pc"
 
-		# check if cloned repo exists. If it does, exit
-		if [ -d "$HOME/$SM64EX_ALO" ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$SM64EX_ALO already exists. Please run UPDATE_SM64EX_ALO if you wish to update $SM64EX_ALO." --width 400 --height 75
-		else
-			(
-			echo -e "Cloning repo...\n"
-			git clone https://github.com/AloUltraExt/$SM64EX_ALO.git
-			cd $SM64EX_ALO
-			echo 25; sleep 1
+	elif [ "$Choice" == "UPDATE_$SM64EX" ]; then
+		update $SM64EX
 
-			echo -e "Copying ROM...\n"
-			cp $HOME/$ROM $HOME/$SM64EX_ALO/
-			echo 50; sleep 1
+	elif [ "$Choice" == "PLAY_$SM64EX" ]; then
+		play $SM64EX
 
-			echo -e "Compiling...\n"
-			make BETTERCAMERA=1 NODRAWINGDISTANCE=1 TEXTURE_FIX=1 EXTERNAL_DATA=1 -j$(nproc)
-			echo -e "Finished compiling\n"
-			) | zen_nospam --title "Super Mario 64 Steam Deck Builder" --text "Installing. This will take a minute or two." --progress --percentage=0 --auto-close --auto-kill --width=300 --height=100
-			echo 100; sleep 1
+	elif [ "$Choice" == "EDIT_$SM64EX" ]; then
+		edit_config "$HOME/.local/share/$SM64EX/sm64config.txt"
 
-			if [ "$?" != 0 ]; then
-				echo -e "\nInstallation canceled.\n"
-			else
-				zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Installation complete!" --width 400 --height 75
-			fi
-		fi
-
-	elif [ "$Choice" == "UPDATE_SM64EX_ALO" ]; then
-		cd $HOME
-
-		# check if directory exists. If it doesn't, exit this option
-		if ! [ -d "$HOME/$SM64EX_ALO" ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$SM64EX_ALO doesn't exist. Please run INSTALL_SM64EX_ALO before running this option." --width 400 --height 75
-		else
-			(
-			cd $SM64EX_ALO
-			echo -e "Updating repository...\n"
-			git pull
-			echo 50; sleep 1
-
-			echo -e "Re-compiling...\n"
-			make -j$(nproc)
-			echo -e "Finished compiling!\n"
-			) | zen_nospam --title "Super Mario 64 Steam Deck Builder" --text "Updating. This shouldn't take long." --progress --percentage=0 --auto-close --auto-kill --width=300 --height=100
-			echo 100; sleep 1
-
-			if [ "$?" != 0 ]; then
-				echo -e "\nUpdate canceled.\n"
-			else
-				zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Update complete!" --width 400 --height 75
-			fi
-		fi
-
-	elif [ "$Choice" == "PLAY_SM64EX_ALO" ]; then
-		# check to see if executable exists. Discontinue if it's not detected
-		if [ -f "$HOME/$SM64EX_ALO/build/$REGION${PC}/sm64.$REGION.f3dex2e" ]; then
-			cd $HOME/$SM64EX_ALO/build/$REGION${PC}/
-			./sm64.$REGION.f3dex2e gfx/ --skip-intro
-		else
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "Executable file not found." --width 400 --height 75
-		fi
-
-	elif [ "$Choice" == "EDIT_SM64EX_ALO" ]; then
-		config_file="$HOME/.local/share/$SM64EX/sm64config.txt"
-
-		if ! [ -f $config_file ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$config_file file not found." --width 400 --height 75
-		else
-			kate $config_file
-		fi
-
-	elif [ "$Choice" == "UNINSTALL_SM64EX_ALO" ]; then
-		if ! [ -d $HOME/$SM64EX_ALO ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$SM64EX_ALO folder not found." --width 400 --height 75
-		else
-			rm -rf $HOME/$SM64EX_ALO
-			zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Uninstall complete." --width 400 --height 75
-		fi
+	elif [ "$Choice" == "UNINSTALL_$SM64EX" ]; then
+		uninstall $SM64EX
 	fi
 	done
 
-elif [ "$Choice" == "SM64PLUS" ]; then
+elif [ "$Choice" == "$SM64EX_ALO" ]; then
 	# sub menu
 	while true; do
-	Choice=$(zen_nospam --width 800 --height 300 --list --radiolist --multiple --title "Super Mario 64 Steam Deck Builder and Launcher"\
-		--column "Select One" \
-		--column "Option" \
-		--column="Description"\
-		FALSE INSTALL_SM64PLUS "Install $SM64PLUS"\
-		FALSE UPDATE_SM64PLUS "Update $SM64PLUS"\
-		FALSE PLAY_SM64PLUS "Play $SM64PLUS"\
-		FALSE EDIT_SM64PLUS "Adjust options for $SM64PLUS"\
-		FALSE UNINSTALL_SM64PLUS "Uninstall $SM64PLUS (warning: save data will be lost! Back up save before proceeding!)"\
-		TRUE EXIT "Exit this menu")
+	Choice=$(sub_menu $SM64EX_ALO)
 
 	if [ $? -eq 1 ] || [ "$Choice" == "EXIT" ]; then
 		echo -e "\nUser selected EXIT, going back to main menu.\n"
 		break
 
-	elif [ "$Choice" == "INSTALL_SM64PLUS" ]; then
-		cd $HOME
+	elif [ "$Choice" == "INSTALL_$SM64EX_ALO" ]; then
+		install $SM64EX_ALO "AloUltraExt"
 
-		# check if cloned repo exists. If it does, exit
-		if [ -d "$HOME/$SM64PLUS" ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$SM64PLUS already exists. Please run UPDATE_SM64PLUS if you wish to update $SM64PLUS." --width 400 --height 75
-		else
-			(
-			echo -e "Cloning repo...\n"
-			git clone https://github.com/MorsGames/$SM64PLUS.git
-			echo 25; sleep 1
+	elif [ "$Choice" == "UPDATE_$SM64EX_ALO" ]; then
+		update $SM64EX_ALO
 
-			echo -e "Copying ROM...\n"
-			cp $HOME/$ROM $HOME/$SM64PLUS/
-			cd $SM64PLUS
-			echo 50; sleep 1
+	elif [ "$Choice" == "PLAY_$SM64EX_ALO" ]; then
+		play $SM64EX_ALO
 
-			echo -e "Compiling...\n"
-			make -j$(nproc)
-			echo -e "Finished compiling!\n"
-			) | zen_nospam --title "Super Mario 64 Steam Deck Builder" --text "Installing. This will take a minute or two." --progress --percentage=0 --auto-close --auto-kill --width=300 --height=100
-			echo 100; sleep 1
+	elif [ "$Choice" == "EDIT_$SM64EX_ALO" ]; then
+		edit_config "$HOME/.local/share/$SM64EX/sm64config.txt"
 
-			if [ "$?" != 0 ]; then
-				echo -e "\nInstallation canceled.\n"
-			else
-				zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Installation complete!" --width 400 --height 75
-			fi
-		fi
-
-	elif [ "$Choice" == "UPDATE_SM64PLUS" ]; then
-		cd $HOME
-
-		# check if directory exists. If it doesn't, exit this option
-		if ! [ -d "$HOME/$SM64PLUS" ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$SM64PLUS doesn't exist. Please run INSTALL_SM64PLUS before running this option." --width 400 --height 75
-		else
-			(
-			cd $SM64PLUS
-			echo -e "Updating repository...\n"
-			git pull
-			echo 50; sleep 1
-
-			echo -e "Re-compiling...\n"
-			make -j$(nproc)
-			echo -e "Finished compiling!\n"
-			) | zen_nospam --title "Super Mario 64 Steam Deck Builder" --text "Updating. This shouldn't take long." --progress --percentage=0 --auto-close --auto-kill --width=300 --height=100
-			echo 100; sleep 1
-
-			if [ "$?" != 0 ]; then
-				echo -e "\nUpdate canceled.\n"
-			else
-				zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Update complete!" --width 400 --height 75
-			fi
-		fi
-
-	elif [ "$Choice" == "PLAY_SM64PLUS" ]; then
-		# check to see if executable exists. Discontinue if it's not detected
-		if [ -f "$HOME/$SM64PLUS/build/$REGION${PC}/sm64.$REGION" ]; then
-			cd $HOME/$SM64PLUS/build/$REGION${PC}/
-			./sm64.$REGION gfx/
-		else
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "Executable file not found." --width 400 --height 75
-		fi
-
-	elif [ "$Choice" == "EDIT_SM64PLUS" ]; then
-		config_file="$HOME/$SM64PLUS/build/$REGION${PC}/settings.ini"
-
-		if ! [ -f $config_file ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$config_file file not found." --width 400 --height 75
-		else
-			kate $config_file
-		fi
-
-	elif [ "$Choice" == "UNINSTALL_SM64PLUS" ]; then
-		if ! [ -d $HOME/$SM64PLUS ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$SM64PLUS folder not found." --width 400 --height 75
-		else
-			if ( zen_nospam --title="Super Mario 64 Steam Deck Builder" --width=300 height=200 --question --text="WARNING: please back up your save file from the Options menu, otherwise it will be deleted! Select Yes to continue, or No to stop." ); then
-					yes |
-						rm -rf $HOME/$SM64PLUS
-						zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Uninstall complete." --width 400 --height 75
-					else
-						echo -e "\nUser selected no, continuing...\n"
-			fi
-		fi
+	elif [ "$Choice" == "UNINSTALL_$SM64EX_ALO" ]; then
+		uninstall $SM64EX_ALO
 	fi
 	done
 
-elif [ "$Choice" == "RENDER96" ]; then
+elif [ "$Choice" == "$RENDER96" ]; then
 	# sub menu
 	while true; do
-	Choice=$(zen_nospam --width 800 --height 350 --list --radiolist --multiple --title "Super Mario 64 Steam Deck Builder and Launcher"\
-		--column "Select One" \
-		--column "Option" \
-		--column="Description"\
-		FALSE INSTALL_RENDER96 "Install $RENDER96"\
-		FALSE INSTALL_TEXTURE_PACKS "Install model/texture packs for $RENDER96 (downloading texture pack will take a while)"\
-		FALSE UPDATE_RENDER96 "Update $RENDER96"\
-		FALSE PLAY_RENDER96 "Play $RENDER96"\
-		FALSE EDIT_RENDER96 "Adjust options for $RENDER96"\
-		FALSE UNINSTALL_RENDER96 "Uninstall $RENDER96"\
-		TRUE EXIT "Exit this menu.")
+	Choice=$(sub_menu $RENDER96)
 
 	if [ $? -eq 1 ] || [ "$Choice" == "EXIT" ]; then
 		echo -e "\nUser selected EXIT, going back to main menu.\n"
 		break
 
-	elif [ "$Choice" == "INSTALL_RENDER96" ]; then
-		cd $HOME
+	elif [ "$Choice" == "INSTALL_$RENDER96" ]; then
+		install $RENDER96 "Render96"
+		info "To enable HD models, you must first download them from the Options menu, then enable them in-game."
 
-		# check if cloned repo exists. If it does, exit
-		if [ -d "$HOME/$RENDER96" ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$RENDER96 already exists. Please run UPDATE_RENDER96 if you wish to update $RENDER96." --width 400 --height 75
-		else
-			(
-			echo -e "Cloning repo...\n"
-			git clone https://github.com/Render96/$RENDER96.git
-			cd $RENDER96
-			echo 25; sleep 1
+	elif [ "$Choice" == "UPDATE_$RENDER96" ]; then
+		update $RENDER96
 
-			echo -e "Copying ROM...\n"
-			cp $HOME/$ROM $HOME/$RENDER96/
-			echo 50; sleep 1
+	elif [ "$Choice" == "PLAY_$RENDER96" ]; then
+		play $RENDER96
 
-			echo -e "Compiling...\n"
-			make -j4
+	elif [ "$Choice" == "EDIT_$RENDER96" ]; then
+		edit_config "$HOME/.local/share/$SM64EX/sm64config.txt"
 
-			# sometimes the command needs to be run twice...
-			echo -e "Compiling a second time...\n"
-			make -j4
-			echo -e "Finished compiling.\n"
-			echo 70; sleep 1
-
-			) | zen_nospam --title "Super Mario 64 Steam Deck Builder" --text "Installing. This will take a minute or two." --progress --percentage=0 --auto-close --auto-kill --width=300 --height=100
-			echo 100; sleep 1
-
-			if [ "$?" != 0 ]; then
-				echo -e "\nInstallation canceled.\n"
-			else
-				zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Installation complete!" --width 400 --height 75
-			fi
-		fi
-
-	elif [ "$Choice" == "INSTALL_TEXTURE_PACKS" ]; then
-		if [ -d $HOME/$RENDER96/build/$REGION${PC}/dynos/packs ] || [ -d $HOME/$RENDER96/build/$REGION${PC}/res/gfx ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$RENDER96 texture/model pack already exists." --width 400 --height 75
-		else
-			echo -e "Downloading model pack...\n"
-			cd $HOME
-			curl -L $(curl -s https://api.github.com/repos/Render96/ModelPack/releases/latest | grep "browser_download_url" | cut -d '"' -f 4) -o $HOME/Render96_DynOs.7z
-			echo -e "Extracting model pack...\n"
-			7za x Render96_DynOs.7z -o/$HOME/$RENDER96/build/$REGION${PC}/dynos/packs
-			rm Render96_DynOs.7z
-
-			echo -e "Downloading texture pack...\n"
-			cd $HOME
-			git clone https://github.com/pokeheadroom/RENDER96-HD-TEXTURE-PACK.git -b master
-			echo -e "Copying...\n"
-			cd RENDER96-HD-TEXTURE-PACK
-			mkdir $HOME/$RENDER96/build/$REGION${PC}/res
-			cp gfx/ -r $HOME/$RENDER96/build/$REGION${PC}/res/gfx
-			cd $HOME
-			rm -rf RENDER96-HD-TEXTURE-PACK
-			echo -e "Done.\n"
-
-			zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Install complete. Note that you will need to enable the HD models via the in-game options menu in order to use them." --width 400 --height 75
-		fi
-
-	elif [ "$Choice" == "UPDATE_RENDER96" ]; then
-		cd $HOME
-
-		# check if directory exists. If it doesn't, exit this option
-		if ! [ -d "$HOME/$RENDER96" ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$RENDER96 doesn't exist. Please run INSTALL_RENDER96 before running this option." --width 400 --height 75
-		else
-			(
-			cd $RENDER96
-			echo -e "Updating repository...\n"
-			git pull
-			echo 50; sleep 1
-
-			echo -e "Re-compiling...\n"
-			make -j$(nproc)
-			echo -e "Finished compiling!\n"
-			) | zen_nospam --title "Super Mario 64 Steam Deck Builder" --text "Updating. This shouldn't take long." --progress --percentage=0 --auto-close --auto-kill --width=300 --height=100
-			echo 100; sleep 1
-
-			if [ "$?" != 0 ]; then
-				echo -e "\nUpdate canceled.\n"
-			else
-				zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Update complete!" --width 400 --height 75
-			fi
-		fi
-
-	elif [ "$Choice" == "PLAY_RENDER96" ]; then
-		# check to see if executable exists. Discontinue if it's not detected
-		if [ -f "$HOME/$RENDER96/build/$REGION${PC}/sm64.$REGION.f3dex2e" ]; then
-			cd $HOME/$RENDER96/build/$REGION${PC}/
-			./sm64.$REGION.f3dex2e --skip-intro
-		else
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "Executable file not found." --width 400 --height 75
-		fi
-
-	elif [ "$Choice" == "EDIT_RENDER96" ]; then
-		config_file="$HOME/.local/share/$SM64EX/sm64config.txt"
-
-		if ! [ -f $config_file ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$config_file file not found." --width 400 --height 75
-		else
-			kate $config_file
-		fi
-
-	elif [ "$Choice" == "UNINSTALL_RENDER96" ]; then
-		if ! [ -d $HOME/$RENDER96 ]; then
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "$RENDER96 folder not found." --width 400 --height 75
-		else
-			rm -rf $HOME/$RENDER96
-			zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Uninstall complete." --width 400 --height 75
-		fi
+	elif [ "$Choice" == "UNINSTALL_$RENDER96" ]; then
+		uninstall $RENDER96
 	fi
 	done
 
+# options menu
 elif [ "$Choice" == "OPTIONS" ]; then
-	# sub menu
 	while true; do
-	Choice=$(zen_nospam --width 800 --height 300 --list --radiolist --multiple --title "Super Mario 64 Steam Deck Builder and Launcher"\
-		--column "Select One" \
-		--column "Option" \
-		--column="Description"\
-		FALSE DEPENDENCIES "Install build dependencies. (Root password required.)"\
-		FALSE BACKUP "Backup save files"\
-		FALSE INSTALL_SM64_RELOADED "Install SM64 Reloaded (hi-res textures)"\
-		TRUE EXIT "Exit this menu.")
+	Choice=$(options)
 
 	if [ $? -eq 1 ] || [ "$Choice" == "EXIT" ]; then
 		echo -e "\nUser selected EXIT, going back to main menu.\n"
 		break
 
 	elif [ "$Choice" == "DEPENDENCIES" ]; then
-		sudo_password=$(zen_nospam --password --title="Super Mario 64 Steam Deck Builder")
+		sudo_password=$(zen_nospam --password --title="$title")
 		if [[ ${?} != 0 || -z ${sudo_password} ]]; then
 			echo -e "User canceled.\n"
 		elif ! sudo -kSp '' [ 1 ] <<<${sudo_password} 2>/dev/null; then
 			echo -e "User entered wrong password.\n"
-			zen_nospam --error --title "Super Mario 64 Steam Deck Builder" --text "Wrong password." --width 300
+			error "Wrong password."
 		else
+			(
 			# Disable the filesystem until we're done
 			echo -e "Disabling read-only mode...\n"
 			sudo -Sp '' steamos-readonly disable <<<${sudo_password}
@@ -660,7 +375,7 @@ elif [ "$Choice" == "OPTIONS" ]; then
 			sudo pacman -S --needed --noconfirm base-devel "$(cat /usr/lib/modules/$(uname -r)/pkgbase)-headers"
 
 			# some additional commands needed to install SM64Plus
-			if ( zen_nospam --title="Super Mario 64 Steam Deck Builder" --width=300 height=200 --question --text="Additional tools are required to install $SM64PLUS. Would you like to install these?" ); then
+			if ( question "Additional tools are required to install $SM64PLUS. Would you like to install these?" ); then
 			yes |
 				sudo sed -i 's/\(^\[.*\]\)/\1\nSigLevel = Never/g' /etc/pacman.conf
 				sudo pacman -Syyu --noconfirm
@@ -674,8 +389,29 @@ elif [ "$Choice" == "OPTIONS" ]; then
 			echo -e "Restoring read-only filesystem...\n"
 			sudo steamos-readonly enable
 			echo -e "Done.\n"
+			) | progress_bar "Installing dependencies, please wait..."
 
-			zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Make dependencies installed!" --width 400 --height 75
+			info "Make dependencies installed!"
+		fi
+	
+	elif [ "$Choice" == "UBUNTU_DEPENDENCIES" ]; then
+		sudo_password=$(zen_nospam --password --title="$title")
+		if [[ ${?} != 0 || -z ${sudo_password} ]]; then
+			echo -e "User canceled.\n"
+		elif ! sudo -kSp '' [ 1 ] <<<${sudo_password} 2>/dev/null; then
+			echo -e "User entered wrong password.\n"
+			error "Wrong password."
+		else
+			(
+			sudo -Sp '' sudo apt update <<<${sudo_password}
+
+			echo -e "Installing essential build tools...\n"
+			sudo apt install -y git build-essential pkg-config libusb-1.0-0-dev libsdl2-dev
+
+			echo -e "Done.\n"
+			) | progress_bar "Installing dependencies, please wait..."
+
+			info "Make dependencies installed!"
 		fi
 
 	elif [ "$Choice" == "BACKUP" ]; then
@@ -684,16 +420,19 @@ elif [ "$Choice" == "OPTIONS" ]; then
 		mkdir -p $HOME/sm64_save_backups/$SM64EX
 		mkdir -p $HOME/sm64_save_backups/$SM64
 		mkdir -p $HOME/sm64_save_backups/$SM64PLUS
-		cp $HOME/.local/share/sm64ex/render96_save_file_0.sav $HOME/sm64_save_backups/$RENDER96
+		cp $HOME/.local/share/sm64ex/render96_save_file_*.sav $HOME/sm64_save_backups/$RENDER96
 		cp $HOME/.local/share/sm64ex/sm64_save_file.bin $HOME/sm64_save_backups/$SM64EX
-		cp $HOME/$SM64/build/$REGION${PC}/sm64_save_file.bin $HOME/sm64_save_backups/$SM64
-		cp $HOME/$SM64PLUS/build/$REGION${PC}/savedata.bin $HOME/sm64_save_backups/$SM64PLUS
+		cp $HOME/.config/SM64Plus/savedata.bin $HOME/sm64_save_backups/$SM64PLUS
+		cp $HOME/Applications/$SM64/build/$REGION${PC}/sm64_save_file.bin $HOME/sm64_save_backups/$SM64
 
-		zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Save data backed up to $HOME/sm64_save_backups." --width 400 --height 75
+		info "Save data backed up to $HOME/sm64_save_backups."
 
 	elif [ "$Choice" == "INSTALL_SM64_RELOADED" ]; then
-		cd $HOME
+		(
+		echo -e "Downloading...\n"
 		curl -L https://evilgames.eu/texture-packs/files/sm64-reloaded-v2.4.0-pc-1080p.zip -o sm64-reloaded.zip
+		
+		echo -e "Extracting...\n"
 		7za x sm64-reloaded.zip
 		cp -r gfx/ $SM64EX/build/$REGION${PC}/res/
 		cp -r gfx/ $SM64EX_ALO/build/$REGION${PC}/res/
@@ -701,8 +440,30 @@ elif [ "$Choice" == "OPTIONS" ]; then
 
 		rm sm64-reloaded.zip
 		rm -rf gfx/
+		) | progress_bar "Downloading and installing SM64 Reloaded textures, please wait..."
 
-		zen_nospam --info --title "Super Mario 64 Steam Deck Builder" --text "Hi-res textures installed to $SM64EX, $SM64EX_ALO, and $SM64PLUS." --width 400 --height 75
+		info "Hi-res textures installed to $SM64EX, $SM64EX_ALO, and $SM64PLUS."
+	
+	elif [ "$Choice" == "INSTALL_TEXTURE_PACKS" ]; then
+		(
+		echo -e "Downloading model pack...\n"
+		curl -L $(curl -s https://api.github.com/repos/Render96/ModelPack/releases/latest | grep "browser_download_url" | cut -d '"' -f 4) -o Render96_DynOs.7z
+		echo -e "Extracting model pack...\n"
+		7za x Render96_DynOs.7z -o/$PWD/$RENDER96/build/$REGION${PC}/dynos/packs
+		rm Render96_DynOs.7z
+		) | progress_bar "Downloading model pack..."
+
+		(
+		echo -e "Downloading texture pack...\n"
+		git clone https://github.com/pokeheadroom/RENDER96-HD-TEXTURE-PACK.git -b master
+		echo -e "Copying...\n"
+		mkdir -p $RENDER96/build/$REGION${PC}/res
+		cp RENDER96-HD-TEXTURE-PACK/gfx/ -r $RENDER96/build/$REGION${PC}/res/
+		rm -rf RENDER96-HD-TEXTURE-PACK
+		echo -e "Done.\n"
+		) | progress_bar "Downloading texture pack...this will probably take a while."
+
+		info "Install complete. Note that you will need to enable the HD models via the in-game options menu in order to use them."
 	fi
 	done
 fi
