@@ -18,7 +18,7 @@ With this you can also:
 - download [SM64 Reloaded](https://evilgames.eu/texture-packs/sm64-reloaded.htm) for hi-res textures
 - backup save files
 
-SM64 PC port builds are downloaded to the `$HOME` directory.
+SM64 PC port builds are downloaded to the `$HOME/Applications/` directory.
 
 ![most_recent](https://github.com/linuxgamingcentral/sm64-steam-deck-builder/assets/101075966/e1d28510-1256-452e-be85-16d2705af48d)
 
