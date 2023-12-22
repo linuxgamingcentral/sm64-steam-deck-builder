@@ -15,6 +15,7 @@ Forks that you can download and run include:
 With this you can also:
 - update or uninstall each fork
 - edit the config file for each fork (using a text editor, for now)
+- add forks as non-Steam shortcuts
 - download [SM64 Reloaded](https://evilgames.eu/texture-packs/sm64-reloaded.htm) for hi-res textures
 - backup save files
 
@@ -23,6 +24,6 @@ SM64 PC port builds are downloaded to the `$HOME/Applications/` directory.
 ![most_recent](https://github.com/linuxgamingcentral/sm64-steam-deck-builder/assets/101075966/e1d28510-1256-452e-be85-16d2705af48d)
 
 ## To-Do
-- add the ability to add forks as non-Steam shortcuts
 - add more forks
 - allow the user to edit config files with an easy-to-use GUI
+- [x] ~~add the ability to add forks as non-Steam shortcuts~~
